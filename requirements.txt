@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+aiohttp
+websockets
+pandas
+numpy
+aioredis
+gql
+pydantic
