@@ -8,6 +8,7 @@ from utils import retry
 from data_processing import PriceData, DataProcessor
 from utils import retry
 
+
 class BinanceClient:
     def __init__(self, data_processor: DataProcessor):
         self.session = None
@@ -18,6 +19,10 @@ class BinanceClient:
         self.symbols = []
         self.ws_tasks = []
         self.running = False
+        # 从配置中读取代理设置
+        self.proxy_host = settings.PROXY_HOST
+        self.proxy_port = settings.PROXY_PORT
+        self.proxy_type = settings.PROXY_TYPE
 
     @retry(Exception, tries=5, delay=5, backoff=2, logger_func=logger.warning)
     async def fetch_symbols(self):
@@ -29,16 +34,33 @@ class BinanceClient:
             logger.info(f"Fetched {len(self.symbols)} symbols from Binance")
 
     async def start(self):
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=settings.HTTP_TIMEOUT))
+        timeout = aiohttp.ClientTimeout(total=settings.HTTP_TIMEOUT)
+
+        # 如果配置了代理，使用 proxy 参数
+        if self.proxy_host and self.proxy_port:
+            proxy = f"{self.proxy_type}://{self.proxy_host}:{self.proxy_port}"
+            connector = aiohttp.TCPConnector()
+            self.session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout,
+                trust_env=True
+            )
+            await self.session.post(proxy)
+        else:
+            # 没有代理时直接设置超时
+            self.session = aiohttp.ClientSession(timeout=timeout)
+        # self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=settings.HTTP_TIMEOUT))
+
         await self.fetch_symbols()
         self.running = True
         self.create_ws_tasks()
 
     def create_ws_tasks(self):
         for i in range(0, len(self.symbols), self.max_streams_per_connection):
-            batch_symbols = self.symbols[i:i+self.max_streams_per_connection]
+            batch_symbols = self.symbols[i:i + self.max_streams_per_connection]
             streams = '/'.join([f"{symbol.lower()}@ticker" for symbol in batch_symbols])
             ws_url = f"{self.ws_url}?streams={streams}"
+            logger.info(f"ws_url: {ws_url}")
             task = asyncio.create_task(self.ws_connection(ws_url))
             self.ws_tasks.append(task)
             logger.info(f"Created WebSocket task for {len(batch_symbols)} symbols")
@@ -73,5 +95,38 @@ class BinanceClient:
         self.running = False
         for task in self.ws_tasks:
             task.cancel()
-        await self.session.close()
+        if self.session:
+            await self.session.close()  # 关闭 session 之前检查是否为 None
+            self.session = None  # 关闭后将 session 设置为 None
         logger.info("BinanceClient stopped")
+
+
+# 添加一个主函数
+async def main():
+    logger.info("Starting BinanceClient")
+
+    # 初始化数据处理器（假设你有 DataProcessor 的具体实现）
+    data_processor = DataProcessor()
+
+    # 初始化 BinanceClient
+    client = BinanceClient(data_processor)
+
+    try:
+        # 运行start方法
+        await client.start()
+        logger.info("BinanceClient has started successfully")
+
+        # 可以在这里等待一段时间，模拟 WebSocket 正在接收数据
+        await asyncio.sleep(10)
+
+    except Exception as e:
+        logger.error(f"An error occurred during execution: {e}")
+    finally:
+        # 停止客户端
+        await client.stop()
+        logger.info("BinanceClient has stopped")
+
+
+# 运行主函数
+if __name__ == "__main__":
+    asyncio.run(main())

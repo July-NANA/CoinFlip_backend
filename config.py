@@ -1,6 +1,8 @@
 # config.py
 import os
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     # Binance API
@@ -26,7 +28,13 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = Field(default='INFO', description="Logging level")
 
+    # Proxy settings
+    PROXY_HOST: str = Field(default='127.0.0.1', description="Proxy host (e.g., '127.0.0.1')")
+    PROXY_PORT: int = Field(default=7890, description="Proxy port (e.g., 7890)")
+    PROXY_TYPE: str = Field(default='http', description="Proxy type (e.g., 'http' or 'https')")
+
     class Config:
         env_file = ".env"
+
 
 settings = Settings()
